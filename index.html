@@ -1,0 +1,1775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SHD AGENT NETWORK // Division 2 Build Database & DPS Calculator</title>
+  
+  <!-- Fonts: Orbitron, Share Tech Mono, Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            shd: {
+              orange: '#ff5500',
+              orangeGlow: '#ff7700',
+              amber: '#ffaa00',
+              dark: '#0a0d12',
+              card: '#111620',
+              cardBorder: '#1e2638',
+              hudBlue: '#00d2ff',
+              redCore: '#ef4444',
+              blueCore: '#3b82f6',
+              yellowCore: '#eab308',
+            }
+          },
+          fontFamily: {
+            mono: ['"Share Tech Mono"', 'monospace'],
+            orbitron: ['"Orbitron"', 'sans-serif'],
+            sans: ['"Inter"', 'sans-serif'],
+          },
+          animation: {
+            'pulse-fast': 'pulse 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'radar': 'radarScan 4s linear infinite',
+            'glitch': 'glitch 3s infinite',
+          },
+          keyframes: {
+            radarScan: {
+              '0%': { transform: 'rotate(0deg)' },
+              '100%': { transform: 'rotate(360deg)' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Custom Tactical Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0a0d12;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #ff550088;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #ff5500;
+    }
+
+    /* Scanline Overlay */
+    .scanlines {
+      background: linear-gradient(
+        rgba(18, 16, 16, 0) 50%, 
+        rgba(0, 0, 0, 0.25) 50%
+      ), linear-gradient(
+        90deg,
+        rgba(255, 0, 0, 0.03),
+        rgba(0, 255, 0, 0.01),
+        rgba(0, 0, 255, 0.03)
+      );
+      background-size: 100% 3px, 6px 100%;
+      pointer-events: none;
+    }
+
+    /* Grid backdrop */
+    .shd-grid-bg {
+      background-size: 40px 40px;
+      background-image: 
+        linear-gradient(to right, rgba(255, 85, 0, 0.04) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 85, 0, 0.04) 1px, transparent 1px);
+    }
+
+    /* Tactical HUD Corner Cuts */
+    .hud-box {
+      clip-path: polygon(
+        0 0, 
+        calc(100% - 14px) 0, 
+        100% 14px, 
+        100% 100%, 
+        14px 100%, 
+        0 calc(100% - 14px)
+      );
+    }
+
+    .shd-glow {
+      box-shadow: 0 0 15px rgba(255, 85, 0, 0.25);
+    }
+    .shd-glow-hover:hover {
+      box-shadow: 0 0 20px rgba(255, 85, 0, 0.45);
+      border-color: rgba(255, 85, 0, 0.8);
+    }
+  </style>
+</head>
+<body class="bg-shd-dark text-slate-200 font-sans min-h-screen relative selection:bg-shd-orange selection:text-black shd-grid-bg overflow-x-hidden">
+  
+  <!-- Subtle Scanline overlay on top -->
+  <div class="fixed inset-0 scanlines z-40"></div>
+
+  <!-- Audio Synthesizer (Web Audio API) Script -->
+  <script>
+    // Audio Manager for SHD UI Audio
+    class TacticalAudioEngine {
+      constructor() {
+        this.ctx = null;
+        this.enabled = true;
+      }
+      init() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AudioContext();
+        }
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+      playChirp(type = 'click') {
+        if (!this.enabled) return;
+        try {
+          this.init();
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          const now = this.ctx.currentTime;
+          
+          if (type === 'click') {
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(1400, now);
+            osc.frequency.exponentialRampToValueAtTime(700, now + 0.04);
+            gain.gain.setValueAtTime(0.12, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.045);
+          } else if (type === 'tab') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(800, now);
+            osc.frequency.setValueAtTime(1200, now + 0.03);
+            gain.gain.setValueAtTime(0.15, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.08);
+          } else if (type === 'alert') {
+            // SHD ISAC dual pulse alert
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(950, now);
+            osc.frequency.setValueAtTime(1150, now + 0.07);
+            gain.gain.setValueAtTime(0.18, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.17);
+          } else if (type === 'calc') {
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(520, now);
+            osc.frequency.exponentialRampToValueAtTime(880, now + 0.05);
+            gain.gain.setValueAtTime(0.08, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.065);
+          }
+        } catch(e) {
+          console.warn("Audio Context init pending user interaction.");
+        }
+      }
+      toggle() {
+        this.enabled = !this.enabled;
+        return this.enabled;
+      }
+    }
+    const SHDAudio = new TacticalAudioEngine();
+    document.addEventListener('click', () => {
+      // Lazy init AudioContext on first tap
+      if (!SHDAudio.ctx) SHDAudio.init();
+    }, { once: true });
+  </script>
+
+  <!-- Top Navigation & ISAC Telemetry Bar -->
+  <header class="border-b border-shd-cardBorder bg-[#0c1017]/90 backdrop-blur sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16 sm:h-20">
+        
+        <!-- Logo & Branding -->
+        <div class="flex items-center space-x-3 sm:space-x-4">
+          <!-- SHD Glowing Ring Emblem -->
+          <div class="relative w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center">
+            <div class="absolute inset-0 rounded-full border-2 border-shd-orange/40 animate-ping opacity-30"></div>
+            <div class="absolute inset-0 rounded-full border border-shd-orange animate-spin" style="animation-duration: 9s;"></div>
+            <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-black/80 border border-shd-orange flex items-center justify-center shadow-[0_0_12px_#ff5500]">
+              <svg class="w-5 h-5 text-shd-orange" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+              </svg>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="font-orbitron font-extrabold text-lg sm:text-2xl tracking-wider text-white">
+                SHD<span class="text-shd-orange">//</span>AGENT NETWORK
+              </span>
+              <span class="hidden sm:inline-block px-2 py-0.5 text-[10px] font-mono tracking-widest bg-shd-orange/20 text-shd-orange border border-shd-orange/40 rounded">
+                D2.META.v2026
+              </span>
+            </div>
+            <div class="font-mono text-[11px] sm:text-xs text-slate-400 flex items-center space-x-2">
+              <span class="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>ISAC NODE: <span class="text-emerald-400">ONLINE</span></span>
+              <span class="text-slate-600">|</span>
+              <span class="hidden md:inline">DIRECTIVE 51: ACTIVE</span>
+              <span class="text-slate-600 hidden md:inline">|</span>
+              <span class="text-shd-orange/90 hidden sm:inline" id="isac-clock">00:00:00 UTC</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Controls: Audio Mute & Nav anchors -->
+        <div class="flex items-center space-x-2 sm:space-x-3">
+          <button id="audio-toggle-btn" 
+            onclick="toggleAudio()"
+            class="px-2.5 py-1.5 rounded border border-shd-cardBorder bg-[#141b27] hover:border-shd-orange text-xs font-mono text-slate-300 flex items-center space-x-1.5 transition">
+            <svg id="audio-icon-on" class="w-4 h-4 text-shd-orange" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M12 6L7 10H3v4h4l5 4V6z"/>
+            </svg>
+            <span class="hidden sm:inline" id="audio-label">AUDIO: ON</span>
+          </button>
+
+          <a href="#dps-calculator" 
+            onclick="SHDAudio.playChirp('tab')"
+            class="px-3 py-1.5 rounded bg-shd-orange/20 border border-shd-orange hover:bg-shd-orange hover:text-black font-mono text-xs font-bold text-shd-orange transition flex items-center space-x-1">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+            </svg>
+            <span>DPS CALC</span>
+          </a>
+        </div>
+
+      </div>
+    </div>
+  </header>
+
+  <!-- ISAC Tactical Banner / Directive Alert -->
+  <div class="bg-gradient-to-r from-shd-dark via-[#1a120c] to-shd-dark border-b border-shd-orange/30 px-4 py-2 text-xs font-mono">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center space-x-2 text-slate-300">
+        <span class="px-1.5 py-0.5 rounded bg-shd-orange text-black font-bold text-[10px]">ISAC TELEMETRY</span>
+        <span class="animate-pulse text-shd-orange">▶</span>
+        <span id="tactical-ticker" class="truncate max-w-xs sm:max-w-xl md:max-w-2xl text-slate-300">
+          Syncing DC & NY Agent tactical database... 8 loadouts verified. Weapon balance index updated.
+        </span>
+      </div>
+      <div class="flex items-center space-x-4 text-[11px] text-slate-400">
+        <span class="flex items-center space-x-1">
+          <span class="w-2 h-2 rounded-full bg-shd-redCore inline-block"></span>
+          <span>RED: OFFENSE</span>
+        </span>
+        <span class="flex items-center space-x-1">
+          <span class="w-2 h-2 rounded-full bg-shd-blueCore inline-block"></span>
+          <span>BLUE: DEFENSE</span>
+        </span>
+        <span class="flex items-center space-x-1">
+          <span class="w-2 h-2 rounded-full bg-shd-yellowCore inline-block"></span>
+          <span>YELLOW: UTILITY</span>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Container -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-12">
+    
+    <!-- Hero / Network Overview Section -->
+    <section class="relative rounded-xl border border-shd-cardBorder bg-gradient-to-b from-[#141b27]/80 to-[#0e131d]/90 p-6 sm:p-8 overflow-hidden hud-box shd-glow">
+      <!-- Watermark Background Emblem -->
+      <div class="absolute -right-10 -bottom-10 opacity-5 pointer-events-none select-none">
+        <svg class="w-96 h-96 text-shd-orange" viewBox="0 0 100 100" fill="currentColor">
+          <circle cx="50" cy="50" r="45" stroke="currentColor" stroke-width="2" fill="none"/>
+          <path d="M50 10 L50 90 M10 50 L90 50 M22 22 L78 78 M22 78 L78 22"/>
+        </svg>
+      </div>
+
+      <div class="relative z-10 max-w-3xl">
+        <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-shd-orange/10 border border-shd-orange/30 text-shd-orange text-xs font-mono mb-4">
+          <span class="w-2 h-2 rounded-full bg-shd-orange animate-ping"></span>
+          <span>AGENT ARCHIVE // RECALIBRATION READY</span>
+        </div>
+        <h1 class="text-3xl sm:text-5xl font-orbitron font-black text-white tracking-wide uppercase leading-tight">
+          Division 2 <span class="text-transparent bg-clip-text bg-gradient-to-r from-shd-orange via-amber-400 to-shd-orange">Meta Loadouts</span> & Damage Engine
+        </h1>
+        <p class="mt-3 text-slate-300 text-sm sm:text-base leading-relaxed">
+          Access combat-proven Strategic Homeland Division gear setups. Each build features complete gear piece breakdowns, brand synergies, weapons, core distributions, and measured damage calculations (burst, sustained, and skill DPS output).
+        </p>
+
+        <!-- Quick Summary Stats Bar -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t border-shd-cardBorder/80 font-mono">
+          <div class="bg-[#0b0e14]/70 p-3 rounded border border-shd-cardBorder">
+            <div class="text-[11px] text-slate-400">HIGHEST BURST DPS</div>
+            <div class="text-xl sm:text-2xl font-orbitron font-bold text-shd-orange">16.4M+</div>
+            <div class="text-[10px] text-slate-500">Striker St. Elmo's</div>
+          </div>
+          <div class="bg-[#0b0e14]/70 p-3 rounded border border-shd-cardBorder">
+            <div class="text-[11px] text-slate-400">HIGHEST SINGLE HIT</div>
+            <div class="text-xl sm:text-2xl font-orbitron font-bold text-amber-400">31.2M</div>
+            <div class="text-[10px] text-slate-500">Hotshot Headhunter</div>
+          </div>
+          <div class="bg-[#0b0e14]/70 p-3 rounded border border-shd-cardBorder">
+            <div class="text-[11px] text-slate-400">MAX EFFECTIVE ARMOR</div>
+            <div class="text-xl sm:text-2xl font-orbitron font-bold text-blue-400">2.1M / 13M</div>
+            <div class="text-[10px] text-slate-500">Bulwark Shield Tank</div>
+          </div>
+          <div class="bg-[#0b0e14]/70 p-3 rounded border border-shd-cardBorder">
+            <div class="text-[11px] text-slate-400">MAX TEAM AMPLIFIER</div>
+            <div class="text-xl sm:text-2xl font-orbitron font-bold text-yellow-400">+25% ALL</div>
+            <div class="text-[10px] text-slate-500">Future Initiative Healer</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Build Database & Catalog Controls -->
+    <section id="builds" class="space-y-6">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-shd-cardBorder pb-4">
+        <div>
+          <h2 class="text-2xl font-orbitron font-bold text-white flex items-center space-x-2">
+            <span class="text-shd-orange">■</span>
+            <span>SHD AGENT BUILD DIRECTORY</span>
+          </h2>
+          <p class="text-xs font-mono text-slate-400">Select filter classification or search specific weapons & talents</p>
+        </div>
+
+        <!-- Search Bar & Favorites Toggle -->
+        <div class="flex flex-wrap items-center gap-2 sm:gap-3">
+          <div class="relative flex-1 sm:w-64">
+            <input type="text" 
+              id="search-input" 
+              placeholder="Filter by weapon, set, talent..." 
+              oninput="filterBuilds()"
+              class="w-full bg-[#111622] border border-shd-cardBorder focus:border-shd-orange text-xs text-white placeholder-slate-500 px-3 py-2 pl-8 rounded focus:outline-none font-mono">
+            <svg class="w-4 h-4 text-slate-400 absolute left-2.5 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+          </div>
+
+          <button id="fav-filter-btn" 
+            onclick="toggleFavoriteFilter()" 
+            class="px-3 py-2 rounded bg-[#111622] border border-shd-cardBorder hover:border-amber-400 text-xs font-mono text-slate-300 flex items-center space-x-1.5 transition">
+            <svg class="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+            </svg>
+            <span id="fav-btn-text">FAVORITES (0)</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Category Filter Tabs -->
+      <div class="flex items-center space-x-2 overflow-x-auto pb-2 scrollbar-none font-mono text-xs">
+        <button class="filter-tab active px-3.5 py-1.5 rounded border border-shd-orange bg-shd-orange text-black font-bold whitespace-nowrap transition" onclick="setCategoryFilter('all', this)">
+          ALL BUILDS [8]
+        </button>
+        <button class="filter-tab px-3.5 py-1.5 rounded border border-shd-cardBorder bg-[#111622] hover:border-shd-orange text-slate-300 whitespace-nowrap transition" onclick="setCategoryFilter('dps', this)">
+          PURE DPS [2]
+        </button>
+        <button class="filter-tab px-3.5 py-1.5 rounded border border-shd-cardBorder bg-[#111622] hover:border-shd-orange text-slate-300 whitespace-nowrap transition" onclick="setCategoryFilter('tank', this)">
+          TANK / HAZPRO [2]
+        </button>
+        <button class="filter-tab px-3.5 py-1.5 rounded border border-shd-cardBorder bg-[#111622] hover:border-shd-orange text-slate-300 whitespace-nowrap transition" onclick="setCategoryFilter('skill', this)">
+          SKILL / STATUS TIER 6 [2]
+        </button>
+        <button class="filter-tab px-3.5 py-1.5 rounded border border-shd-cardBorder bg-[#111622] hover:border-shd-orange text-slate-300 whitespace-nowrap transition" onclick="setCategoryFilter('hybrid', this)">
+          SNIPER / RAID META [2]
+        </button>
+      </div>
+
+      <!-- Build Cards Grid -->
+      <div id="builds-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Rendered dynamically by JavaScript -->
+      </div>
+    </section>
+
+    <!-- Interactive Division 2 DPS & Damage Calculator Section -->
+    <section id="dps-calculator" class="space-y-6 pt-6">
+      <div class="border-b border-shd-cardBorder pb-4 flex flex-col md:flex-row md:items-center justify-between gap-2">
+        <div>
+          <h2 class="text-2xl font-orbitron font-bold text-white flex items-center space-x-2">
+            <span class="text-shd-orange">■</span>
+            <span>DIVISION 2 REAL-TIME DAMAGE FORMULA ENGINE</span>
+          </h2>
+          <p class="text-xs font-mono text-slate-400">
+            Calculates exact Division 2 multipliers: [Base Dmg] × [1 + AWD + Wpn Type Dmg] × [1 + Total Wpn Dmg] × [1 + Crit Hit/Headshot Multiplier] × [1 + DTOOC] × [1 + DTA] × [Amp Dmg]
+          </p>
+        </div>
+        <div class="font-mono text-xs text-shd-orange flex items-center space-x-2">
+          <span class="inline-block w-2 h-2 bg-shd-orange rounded-full animate-ping"></span>
+          <span>LIVE TELEMETRY ENGINE</span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Controls Column -->
+        <div class="lg:col-span-7 bg-[#111622] border border-shd-cardBorder rounded-xl p-5 space-y-5 hud-box">
+          
+          <div class="flex items-center justify-between border-b border-shd-cardBorder pb-3">
+            <span class="font-mono text-xs text-slate-300 uppercase tracking-wider font-bold">1. WEAPON & CORE PROFILE</span>
+            <div class="flex space-x-2">
+              <button onclick="loadWeaponPreset('st_elmo')" class="text-[10px] font-mono px-2 py-0.5 rounded bg-shd-cardBorder text-slate-300 hover:text-white hover:bg-shd-orange/30">Preset: St. Elmo's</button>
+              <button onclick="loadWeaponPreset('ouroboros')" class="text-[10px] font-mono px-2 py-0.5 rounded bg-shd-cardBorder text-slate-300 hover:text-white hover:bg-shd-orange/30">Preset: Ouroboros</button>
+              <button onclick="loadWeaponPreset('white_death')" class="text-[10px] font-mono px-2 py-0.5 rounded bg-shd-cardBorder text-slate-300 hover:text-white hover:bg-shd-orange/30">Preset: White Death</button>
+            </div>
+          </div>
+
+          <!-- Weapon Base Damage & RPM -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label class="block font-mono text-[11px] text-slate-400 mb-1">BASE DAMAGE (Sheet)</label>
+              <div class="relative">
+                <input type="number" id="calc-base-dmg" value="78500" step="500" min="5000" max="2500000" 
+                  class="w-full bg-[#0a0d12] border border-shd-cardBorder rounded px-3 py-1.5 text-sm font-mono text-white focus:border-shd-orange focus:outline-none"
+                  oninput="updateDPSCalc()">
+              </div>
+            </div>
+            <div>
+              <label class="block font-mono text-[11px] text-slate-400 mb-1">ROUNDS PER MIN (RPM)</label>
+              <input type="number" id="calc-rpm" value="850" step="25" min="50" max="1800" 
+                class="w-full bg-[#0a0d12] border border-shd-cardBorder rounded px-3 py-1.5 text-sm font-mono text-white focus:border-shd-orange focus:outline-none"
+                oninput="updateDPSCalc()">
+            </div>
+            <div>
+              <label class="block font-mono text-[11px] text-slate-400 mb-1">MAGAZINE SIZE</label>
+              <input type="number" id="calc-mag" value="70" step="1" min="1" max="200" 
+                class="w-full bg-[#0a0d12] border border-shd-cardBorder rounded px-3 py-1.5 text-sm font-mono text-white focus:border-shd-orange focus:outline-none"
+                oninput="updateDPSCalc()">
+            </div>
+          </div>
+
+          <div class="border-t border-shd-cardBorder/60 pt-4">
+            <span class="font-mono text-xs text-slate-300 uppercase tracking-wider font-bold">2. CRITICAL HIT & ACCURACY</span>
+          </div>
+
+          <!-- CHC / CHD / HSD Sliders -->
+          <div class="space-y-3 font-mono text-xs">
+            <!-- CHC -->
+            <div>
+              <div class="flex justify-between text-slate-400 mb-1">
+                <span>CRITICAL HIT CHANCE (CHC) <span class="text-amber-500 font-bold">[Hard Cap 60%]</span></span>
+                <span id="calc-chc-val" class="text-white font-bold">58.0%</span>
+              </div>
+              <input type="range" id="calc-chc" min="0" max="60" value="58" step="0.5"
+                class="w-full accent-shd-orange bg-[#0a0d12] h-2 rounded cursor-pointer"
+                oninput="updateDPSCalc()">
+            </div>
+
+            <!-- CHD -->
+            <div>
+              <div class="flex justify-between text-slate-400 mb-1">
+                <span>CRITICAL HIT DAMAGE (CHD)</span>
+                <span id="calc-chd-val" class="text-white font-bold">172.0%</span>
+              </div>
+              <input type="range" id="calc-chd" min="0" max="300" value="172" step="1"
+                class="w-full accent-shd-orange bg-[#0a0d12] h-2 rounded cursor-pointer"
+                oninput="updateDPSCalc()">
+            </div>
+
+            <!-- HSD -->
+            <div>
+              <div class="flex justify-between text-slate-400 mb-1">
+                <span>HEADSHOT DAMAGE (HSD)</span>
+                <span id="calc-hsd-val" class="text-white font-bold">65.0%</span>
+              </div>
+              <input type="range" id="calc-hsd" min="0" max="350" value="65" step="1"
+                class="w-full accent-shd-orange bg-[#0a0d12] h-2 rounded cursor-pointer"
+                oninput="updateDPSCalc()">
+            </div>
+          </div>
+
+          <div class="border-t border-shd-cardBorder/60 pt-4">
+            <span class="font-mono text-xs text-slate-300 uppercase tracking-wider font-bold">3. MULTIPLICATIVE SHD AMPLIFIERS</span>
+          </div>
+
+          <!-- Multipliers: DTOOC, DTA, Striker Stacks, Amplified -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 font-mono text-xs">
+            <div>
+              <label class="block text-slate-400 mb-1">DAMAGE TO TARGET OUT OF COVER (DTOOC)</label>
+              <div class="flex items-center space-x-2">
+                <input type="range" id="calc-dtooc" min="0" max="30" value="10" step="1"
+                  class="w-full accent-shd-orange bg-[#0a0d12] h-2 rounded cursor-pointer"
+                  oninput="updateDPSCalc()">
+                <span id="calc-dtooc-val" class="w-12 text-right text-white font-bold">10%</span>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-slate-400 mb-1">DAMAGE TO ARMOR (DTA)</label>
+              <div class="flex items-center space-x-2">
+                <input type="range" id="calc-dta" min="0" max="30" value="6" step="1"
+                  class="w-full accent-shd-orange bg-[#0a0d12] h-2 rounded cursor-pointer"
+                  oninput="updateDPSCalc()">
+                <span id="calc-dta-val" class="w-12 text-right text-white font-bold">6%</span>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-slate-400 mb-1">STRIKER / HEARTBREAKER STACKS (0 - 200)</label>
+              <div class="flex items-center space-x-2">
+                <input type="range" id="calc-stacks" min="0" max="200" value="100" step="5"
+                  class="w-full accent-shd-orange bg-[#0a0d12] h-2 rounded cursor-pointer"
+                  oninput="updateDPSCalc()">
+                <span id="calc-stacks-val" class="w-12 text-right text-shd-orange font-bold">100</span>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-slate-400 mb-1">GEAR SET STACK MULTIPLIER</label>
+              <select id="calc-stack-type" onchange="updateDPSCalc()" class="w-full bg-[#0a0d12] border border-shd-cardBorder rounded px-2 py-1.5 text-xs text-white">
+                <option value="0.0065">Striker 4pc (+0.65% Amp per stack)</option>
+                <option value="0.0100">Striker w/ Chest (+1.00% Amp per stack)</option>
+                <option value="0.0100_hb">Heartbreaker (+1.00% Bonus per stack)</option>
+                <option value="0.0000">None / Standard High-End</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Total Weapon Damage & Amplified Talents (Vigilance, Glass Cannon, Flatline) -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 font-mono text-xs pt-2">
+            <div>
+              <label class="block text-slate-400 mb-1">RED CORES (0 to 6)</label>
+              <div class="flex items-center space-x-2">
+                <input type="range" id="calc-red-cores" min="0" max="6" value="6" step="1"
+                  class="w-full accent-shd-redCore bg-[#0a0d12] h-2 rounded cursor-pointer"
+                  oninput="updateDPSCalc()">
+                <span id="calc-red-cores-val" class="w-12 text-right text-shd-redCore font-bold">6 Cores</span>
+              </div>
+              <span class="text-[10px] text-slate-500">+15% All Weapon Damage per core</span>
+            </div>
+
+            <div>
+              <label class="block text-slate-400 mb-1">AMPLIFIED TALENT BONUS</label>
+              <select id="calc-talent-amp" onchange="updateDPSCalc()" class="w-full bg-[#0a0d12] border border-shd-cardBorder rounded px-2 py-1.5 text-xs text-white">
+                <option value="0.25">Perfect Vigilance (+25% Total Wpn Dmg)</option>
+                <option value="0.25_gc">Perfect Glass Cannon (+30% Amp Dmg)</option>
+                <option value="0.20">Obliterate max stacks (+25% Total Wpn Dmg)</option>
+                <option value="0.20_flat">Spotter / Flatline (+15% to 20% Amp)</option>
+                <option value="0.00">No Buff Active (+0%)</option>
+              </select>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Telemetry & Visualized Readout Column -->
+        <div class="lg:col-span-5 flex flex-col space-y-4">
+          
+          <!-- Primary Telemetry Box -->
+          <div class="bg-gradient-to-b from-[#151c2a] to-[#0c1017] border border-shd-orange/50 rounded-xl p-5 hud-box shadow-[0_0_20px_rgba(255,85,0,0.15)] flex-1 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between border-b border-shd-cardBorder pb-3">
+                <span class="font-orbitron font-bold text-sm text-white flex items-center space-x-1.5">
+                  <span class="w-2.5 h-2.5 bg-shd-orange rounded-sm inline-block"></span>
+                  <span>ISAC DAMAGE MATRIX</span>
+                </span>
+                <span class="font-mono text-[10px] text-shd-orange px-2 py-0.5 rounded bg-shd-orange/10 border border-shd-orange/30">
+                  ESTIMATED AT TARGET
+                </span>
+              </div>
+
+              <!-- Big Numbers -->
+              <div class="mt-4 space-y-4">
+                <div>
+                  <div class="font-mono text-xs text-slate-400">BURST CYCLIC DPS</div>
+                  <div id="output-burst-dps" class="font-orbitron font-black text-3xl sm:text-4xl text-shd-orange tracking-wider">
+                    14,842,500
+                  </div>
+                  <div class="text-[10px] font-mono text-slate-500">Damage delivered per second during active continuous fire</div>
+                </div>
+
+                <div>
+                  <div class="font-mono text-xs text-slate-400">SUSTAINED COMBAT DPS (Includes 2.3s Reload)</div>
+                  <div id="output-sustained-dps" class="font-orbitron font-bold text-2xl text-amber-400 tracking-wider">
+                    8,940,120
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 pt-3 border-t border-shd-cardBorder font-mono">
+                  <div class="bg-[#0b0f16] p-2.5 rounded border border-shd-cardBorder">
+                    <div class="text-[10px] text-slate-400">NON-CRIT BODY HIT</div>
+                    <div id="output-body-hit" class="text-base font-bold text-slate-200">
+                      482,100
+                    </div>
+                  </div>
+                  <div class="bg-[#0b0f16] p-2.5 rounded border border-shd-cardBorder">
+                    <div class="text-[10px] text-slate-400">CRIT BODY HIT</div>
+                    <div id="output-crit-hit" class="text-base font-bold text-shd-orange">
+                      1,311,312
+                    </div>
+                  </div>
+                  <div class="bg-[#0b0f16] p-2.5 rounded border border-shd-cardBorder">
+                    <div class="text-[10px] text-slate-400">NON-CRIT HEADSHOT</div>
+                    <div id="output-head-hit" class="text-base font-bold text-slate-200">
+                      795,465
+                    </div>
+                  </div>
+                  <div class="bg-[#0b0f16] p-2.5 rounded border border-shd-cardBorder">
+                    <div class="text-[10px] text-slate-400">CRIT HEADSHOT HIT</div>
+                    <div id="output-crit-head" class="text-base font-bold text-yellow-400">
+                      1,624,677
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Total Damage per Magazine Dump -->
+            <div class="mt-4 pt-3 border-t border-shd-cardBorder font-mono">
+              <div class="flex justify-between items-center text-xs">
+                <span class="text-slate-400">MAGAZINE DUMP TOTAL:</span>
+                <span id="output-mag-total" class="font-bold text-white text-sm">73,433,472 DMG</span>
+              </div>
+              <div class="w-full bg-[#0a0d12] h-2 rounded mt-2 overflow-hidden flex">
+                <div id="bar-crit-ratio" style="width: 58%;" class="bg-shd-orange h-full" title="Crit Probability"></div>
+                <div class="bg-slate-700 h-full flex-1" title="Non-Crit Probability"></div>
+              </div>
+              <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+                <span>Avg Crit Vol: <span id="bar-crit-label">58%</span></span>
+                <span>Mag Fire Time: <span id="output-mag-time">4.94s</span></span>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Quick Weapon Comparison Bar Chart (Canvas) -->
+          <div class="bg-[#111622] border border-shd-cardBorder rounded-xl p-4 hud-box">
+            <div class="flex justify-between items-center mb-2">
+              <span class="font-mono text-xs text-slate-300 font-bold">LIVE DAMAGE BENCHMARK</span>
+              <span class="font-mono text-[10px] text-slate-500">CANVAS TELEMETRY</span>
+            </div>
+            <div class="w-full h-28 relative">
+              <canvas id="dps-benchmark-canvas" class="w-full h-full rounded"></canvas>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ISAC Recalibration Checklist & Build Comparison Table -->
+    <section class="space-y-6 pt-6">
+      <div class="border-b border-shd-cardBorder pb-4">
+        <h2 class="text-2xl font-orbitron font-bold text-white flex items-center space-x-2">
+          <span class="text-shd-orange">■</span>
+          <span>MASTER BUILD COMPARISON & COMBAT PERFORMANCE MATRIX</span>
+        </h2>
+        <p class="text-xs font-mono text-slate-400">Summary table of Division 2 meta setups across damage tiers, survivability, and optimal roles</p>
+      </div>
+
+      <div class="overflow-x-auto rounded-xl border border-shd-cardBorder bg-[#111622]">
+        <table class="w-full text-left font-mono text-xs">
+          <thead class="bg-[#0b0e14] text-slate-400 uppercase text-[11px] border-b border-shd-cardBorder">
+            <tr>
+              <th class="p-3">Build Designation</th>
+              <th class="p-3">Role</th>
+              <th class="p-3">Cores (R/B/Y)</th>
+              <th class="p-3">Primary Weapon</th>
+              <th class="p-3 text-right">Burst DPS</th>
+              <th class="p-3 text-right">Sustained DPS</th>
+              <th class="p-3">Survivability</th>
+              <th class="p-3 text-center">Inspect</th>
+            </tr>
+          </thead>
+          <tbody id="comparison-table-body" class="divide-y divide-shd-cardBorder/60 text-slate-300">
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Interactive Build Inspector Modal -->
+  <div id="inspector-modal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="relative w-full max-w-4xl max-h-[90vh] bg-[#111622] border-2 border-shd-orange rounded-xl hud-box shadow-[0_0_30px_rgba(255,85,0,0.35)] flex flex-col overflow-hidden">
+      
+      <!-- Modal Header -->
+      <div class="p-4 sm:p-5 bg-[#0b0e14] border-b border-shd-cardBorder flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <div class="w-3 h-3 bg-shd-orange rounded-full animate-ping"></div>
+          <div>
+            <h3 id="modal-build-title" class="font-orbitron font-bold text-lg sm:text-xl text-white">BUILD NAME</h3>
+            <div id="modal-build-subtitle" class="font-mono text-xs text-shd-orange">CLASSIFICATION // RED CORE META</div>
+          </div>
+        </div>
+        <button onclick="closeInspectorModal()" class="p-2 text-slate-400 hover:text-white rounded border border-shd-cardBorder hover:border-shd-orange transition">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Modal Body (Scrollable) -->
+      <div id="modal-body-content" class="p-4 sm:p-6 space-y-6 overflow-y-auto">
+        <!-- Injected via openInspectorModal(buildId) -->
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="p-4 bg-[#0b0e14] border-t border-shd-cardBorder flex flex-wrap items-center justify-between gap-3 font-mono text-xs">
+        <div class="text-slate-400 flex items-center space-x-2">
+          <span>LOADOUT HASH:</span>
+          <span id="modal-build-hash" class="text-shd-orange font-bold">SHD-STRK-9981</span>
+        </div>
+        <div class="flex items-center space-x-3">
+          <button id="modal-copy-btn" onclick="copyLoadoutCode()" class="px-3 py-1.5 rounded bg-shd-orange/20 border border-shd-orange text-shd-orange hover:bg-shd-orange hover:text-black font-bold transition">
+            COPY LOADOUT CODE
+          </button>
+          <button onclick="closeInspectorModal()" class="px-3 py-1.5 rounded bg-[#151c28] border border-shd-cardBorder text-slate-300 hover:text-white transition">
+            DISMISS
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Toast Notification System -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-50 space-y-2 font-mono text-xs pointer-events-none"></div>
+
+  <!-- Tactical Footer -->
+  <footer class="mt-20 border-t border-shd-cardBorder bg-[#080b0f] py-8 text-center font-mono text-xs text-slate-500">
+    <div class="max-w-7xl mx-auto px-4 space-y-2">
+      <div class="flex items-center justify-center space-x-2 text-shd-orange">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+        </svg>
+        <span class="font-orbitron font-bold">STRATEGIC HOMELAND DIVISION // DIRECTIVE 51</span>
+      </div>
+      <p>Data calibrated for Tom Clancy's The Division 2. Calculations utilize standard PvE multipliers, Tier 5 heroic armor values, and max SHD Watch modifiers.</p>
+      <p class="text-[10px] text-slate-600">SHD Agent Network database tool created for Division Agents.</p>
+    </div>
+  </footer>
+
+  <!-- Application Logic & Dataset -->
+  <script>
+    /* =====================================================================
+       1. DIVISION 2 BUILDS DATABASE
+       Comprehensive data for all 8 meta builds with exact damage, gear pieces,
+       weapons, talents, and tactical SVG loadout diagrams.
+       ===================================================================== */
+    const DIVISION_BUILDS = [
+      {
+        id: 'striker_red_core',
+        title: "Striker's Battlegear Red Core Meta",
+        category: 'dps',
+        role: "Pure High-End Sustained DPS",
+        difficulty: "Low / Moderate",
+        burstDPS: "15.8M - 18.2M",
+        sustainedDPS: "9.4M DPS",
+        effectiveArmor: "726k Armor",
+        shieldHP: "N/A (Reviver Hive)",
+        cores: { red: 6, blue: 0, yellow: 0 },
+        tag: "RAID / INCURSION META",
+        weapons: {
+          primary: "St. Elmo's Engine (Exotic AR)",
+          secondary: "ACS-12 / Rock 'n' Roll (AA-12 Shotgun)",
+          sidearm: "Orbit or TDI 'Kard' Custom"
+        },
+        gearPieces: [
+          { slot: "Mask", name: "Coyote's Mask", type: "Exotic", core: "red", attr: ["15% Wpn Dmg", "6% CHC", "12% CHD"], talent: "Pack Instincts (Up to +25% CHC or +25% CHD for team)" },
+          { slot: "Chest", name: "Striker's Breastplate", type: "Gear Set", core: "red", attr: ["15% Wpn Dmg", "12% CHD"], talent: "Press the Advantage (Increases max stacks from 100 to 200)" },
+          { slot: "Backpack", name: "Striker's Backpack", type: "Gear Set", core: "red", attr: ["15% Wpn Dmg", "12% CHD"], talent: "Risk Management (Increases stack damage from 0.65% to 1.00%)" },
+          { slot: "Gloves", name: "Striker's Gloves", type: "Gear Set", core: "red", attr: ["15% Wpn Dmg", "12% CHD"], talent: "Gear Set Core" },
+          { slot: "Holster", name: "Striker's Holster", type: "Gear Set", core: "red", attr: ["15% Wpn Dmg", "12% CHD"], talent: "Gear Set Core" },
+          { slot: "Kneepads", name: "Fox's Prayer (Overlord)", type: "Named High-End", core: "red", attr: ["15% Wpn Dmg", "8% DTOOC", "12% CHD"], talent: "Damage to Target Out of Cover" }
+        ],
+        skills: ["Reviver Hive", "Crusader Shield / Striker Drone"],
+        description: "The indisputable benchmark for Division 2 DPS. Utilizes ACS-12 to generate 200 Striker stacks in 2 seconds, then swaps to St. Elmo's Engine for devastating 1.4M+ crit bullets with built-in shock ammo CC.",
+        strengths: ["Highest raw sustained weapon DPS in the game", "Permanent shock rounds from St. Elmo's", "Huge team CHD buff from Coyote's Mask"],
+        weaknesses: ["Glass cannon survivability (only 726k base armor)", "Requires stack maintenance against high mobility foes"],
+        dpsNumber: 15800000,
+        sustainedNumber: 9400000,
+        code: "SHD-STRK-ELMO-6RED-200STK"
+      },
+      {
+        id: 'heartbreaker_hybrid',
+        title: "Heartbreaker Armor Striker Hybrid",
+        category: 'tank',
+        role: "Run-and-Gun Brawler / Solo Tank-DPS",
+        difficulty: "Moderate",
+        burstDPS: "8.2M - 9.5M",
+        sustainedDPS: "5.8M DPS",
+        effectiveArmor: "1.5M Armor + 1.5M Overshield",
+        shieldHP: "4.8M Crusader Shield",
+        cores: { red: 3, blue: 3, yellow: 0 },
+        tag: "SOLO HEROIC / COUNTDOWN",
+        weapons: {
+          primary: "Kingbreaker (Named TKB-408 AR w/ Flatline)",
+          secondary: "ACS-12 w/ Flatline",
+          sidearm: "TDI 'Kard' Custom"
+        },
+        gearPieces: [
+          { slot: "Mask", name: "Heartbreaker Mask", type: "Gear Set", core: "blue", attr: ["170k Armor", "12% CHD"], talent: "Gear Set Core" },
+          { slot: "Chest", name: "Heartbreaker Chestplate", type: "Gear Set", core: "blue", attr: ["170k Armor", "12% CHD"], talent: "Max Stacks increased to 100" },
+          { slot: "Backpack", name: "Memento Backpack", type: "Exotic", core: "hybrid", attr: ["15% Wpn Dmg", "170k Armor", "+1 Skill Tier"], talent: "Kill Confirmed (+30% Wpn Dmg, +3% Armor Regen, 30% Skill Eff)" },
+          { slot: "Gloves", name: "Heartbreaker Gloves", type: "Gear Set", core: "red", attr: ["15% Wpn Dmg", "12% CHD"], talent: "Gear Set Core" },
+          { slot: "Holster", name: "Heartbreaker Holster", type: "Gear Set", core: "red", attr: ["15% Wpn Dmg", "6% CHC"], talent: "Gear Set Core" },
+          { slot: "Kneepads", name: "Ceska Vyroba Kneepads", type: "High-End", core: "blue", attr: ["170k Armor", "6% CHC", "12% CHD"], talent: "10% Brand CHC" }
+        ],
+        skills: ["Technician Linked Laser Pointer (Auto-pulse)", "Crusader Shield"],
+        description: "Equips the Technician underbarrel laser to automatically pulse every enemy aimed at, instantly triggering Flatline (+20% amplified damage) and stacking Heartbreaker's 100% bonus armor overshield on automatic weapon hits.",
+        strengths: ["Virtually unkillable in close quarters due to continuous overshield renewal", "High mobility with Crusader Shield", "Outstanding solo heroic carry capacity"],
+        weaknesses: ["Lower long-range reach", "Requires continuous hits to maintain blue bonus shield"],
+        dpsNumber: 8500000,
+        sustainedNumber: 5800000,
+        code: "SHD-HB-KING-3R3B-MEMENTO"
+      },
+      {
+        id: 'foundry_bulwark_tank',
+        title: "Foundry Bulwark / True Patriot Immortal Tank",
+        category: 'tank',
+        role: "Raid Vanguard / Indestructible Shield Tank",
+        difficulty: "Low",
+        burstDPS: "2.4M DPS",
+        sustainedDPS: "1.8M DPS",
+        effectiveArmor: "2.1M Armor (Regen: 85k/s)",
+        shieldHP: "13.4M Bulwark Shield",
+        cores: { red: 0, blue: 6, yellow: 0 },
+        tag: "RAID / INCURSION TANK",
+        weapons: {
+          primary: "Scorpio (Exotic Shotgun - Poison/Disorient/Shock/Amp)",
+          secondary: "The Apartment SMG or Sweet Dreams",
+          sidearm: "Liberty Exotic Pistol (Heals shield on headshots)"
+        },
+        gearPieces: [
+          { slot: "Mask", name: "Catharsis Mask", type: "Exotic", core: "blue", attr: ["170k Armor", "HazPro"], talent: "Vicious Cycle (Builds 30% amp damage, drops healing cloud)" },
+          { slot: "Chest", name: "Tardigrade Armor System or Pointman", type: "Exotic/Named", core: "blue", attr: ["170k Armor", "Armor Regen"], talent: "Richochet Plating / Perfect Vanguard (Grants team 1M+ armor)" },
+          { slot: "Backpack", name: "Foundry Bulwark Backpack", type: "Gear Set", core: "blue", attr: ["170k Armor", "Armor Regen"], talent: "Improved Materials (Shield regenerates 30% damage taken)" },
+          { slot: "Gloves", name: "Foundry Bulwark Gloves", type: "Gear Set", core: "blue", attr: ["170k Armor", "Armor Regen"], talent: "Gear Set Core" },
+          { slot: "Holster", name: "Foundry Bulwark Holster", type: "Gear Set", core: "blue", attr: ["170k Armor", "Armor Regen"], talent: "Gear Set Core" },
+          { slot: "Kneepads", name: "Foundry Bulwark Kneepads", type: "Gear Set", core: "blue", attr: ["170k Armor", "Armor Regen"], talent: "Gear Set Core" }
+        ],
+        skills: ["Bulwark Shield (Tier 6)", "Artificer Hive (Technician auto-repairs shield)"],
+        description: "The premier frontline sponge for Iron Horse, Dark Hours, and Wright in the Incursion. The Bulwark shield has 13+ million hit points, while the Scorpio shotgun stuns and amplifies all damage dealt to bosses by +20%.",
+        strengths: ["Can absorb direct legendary heavy minigun fire indefinitely", "Massive team bonus armor via Pointman / Tardigrade", "Continuous debuffs with Scorpio"],
+        weaknesses: ["Low personal weapon damage output", "Flank vulnerability if positional awareness slips"],
+        dpsNumber: 2400000,
+        sustainedNumber: 1800000,
+        code: "SHD-TANK-BULW-13MSHIELD"
+      },
+      {
+        id: 'eclipse_firestarter',
+        title: "Eclipse Protocol Status Firestarter",
+        category: 'skill',
+        role: "Room-Wiping Status Effect & Crowd Control",
+        difficulty: "Moderate",
+        burstDPS: "950k/sec Burn + Toxin Tick",
+        sustainedDPS: "Entire Spawn Wave Wipe",
+        effectiveArmor: "726k Armor",
+        shieldHP: "N/A",
+        cores: { red: 0, blue: 0, yellow: 6 },
+        tag: "HEROIC SPEEDRUN / SPAWN TRAP",
+        weapons: {
+          primary: "Capacitor (Exotic AR - +60% Skill Damage)",
+          secondary: "Pyromaniac (Named M4 w/ Perfectly Ignited)",
+          sidearm: "TDI 'Kard' Custom"
+        },
+        gearPieces: [
+          { slot: "Mask", name: "Vile Mask", type: "Exotic", core: "yellow", attr: ["+1 Skill Tier", "10% Status Effects"], talent: "Toxic Delivery (Status effects apply lethal debuff tick based on grenade dmg)" },
+          { slot: "Chest", name: "Eclipse Protocol Chest", type: "Gear Set", core: "yellow", attr: ["+1 Skill Tier", "10% Status Effects"], talent: "Proliferation (Spreads 100% of status effect to enemies within 20m)" },
+          { slot: "Backpack", name: "Eclipse Protocol Backpack", type: "Gear Set", core: "yellow", attr: ["+1 Skill Tier", "10% Status Effects"], talent: "Symptom Aggravator (+30% amplified damage to status-affected targets)" },
+          { slot: "Gloves", name: "Eclipse Protocol Gloves", type: "Gear Set", core: "yellow", attr: ["+1 Skill Tier", "10% Status Effects"], talent: "Gear Set Core" },
+          { slot: "Holster", name: "Eclipse Protocol Holster", type: "Gear Set", core: "yellow", attr: ["+1 Skill Tier", "10% Status Effects"], talent: "Gear Set Core" },
+          { slot: "Kneepads", name: "Golan Gear Kneepads", type: "High-End", core: "yellow", attr: ["+1 Skill Tier", "10% Status Effects", "Haste"], talent: "1pc Brand: +10% Status Effects" }
+        ],
+        skills: ["Firestarter Chem Launcher", "Burn Sticky Bomb or Jammer EMP"],
+        description: "Sets one enemy ablaze at a doorway or spawn helicopter; when that enemy dies, Eclipse Protocol instantly spreads max-duration burn and toxic damage to every enemy in a 20m radius, melting whole rooms in seconds.",
+        strengths: ["Unmatched room-clearing speed in heroic missions", "Incapacitates enemies prevents them from returning fire", "Huge area-of-effect chain reactions"],
+        weaknesses: ["Vulnerable to heavily armored boss helmets that resist fire initial application", "Requires good aim with Chem canisters"],
+        dpsNumber: 4200000,
+        sustainedNumber: 3800000,
+        code: "SHD-ECLP-VILE-BURN-SPREAD"
+      },
+      {
+        id: 'rigger_empress_turret_drone',
+        title: "Empress AFK Tech Drone & Artillery Turret",
+        category: 'skill',
+        role: "Automated AFK Solo Skill DPS",
+        difficulty: "Very Low",
+        burstDPS: "4.8M Combined Skill DPS",
+        sustainedDPS: "4.2M Continuous DPS",
+        effectiveArmor: "726k Armor",
+        shieldHP: "N/A",
+        cores: { red: 0, blue: 0, yellow: 6 },
+        tag: "LEGENDARY SOLO SAFE",
+        weapons: {
+          primary: "Capacitor (Exotic AR)",
+          secondary: "Harmony Named Rifle (Perfect In-Sync: +40% Skill/Wpn Dmg)",
+          sidearm: "Orbit Named Revolver"
+        },
+        gearPieces: [
+          { slot: "Mask", name: "Empress International Mask", type: "High-End", core: "yellow", attr: ["+1 Skill Tier", "10% Skill Dmg", "12% Skill Haste"], talent: "Brand Set: +10% Skill Health, +10% Dmg, +10% Efficiency" },
+          { slot: "Chest", name: "Empress Chestplate", type: "High-End", core: "yellow", attr: ["+1 Skill Tier", "10% Skill Dmg", "12% Skill Haste"], talent: "Kinetic Momentum (Up to +30% Skill Damage & +60% Skill Repair)" },
+          { slot: "Backpack", name: "Hana-U Backpack (Force Multiplier)", type: "Named High-End", core: "yellow", attr: ["+1 Skill Tier", "10% Skill Dmg", "12% Skill Haste"], talent: "Perfect Combined Arms (Shooting increases skill damage by +30%)" },
+          { slot: "Gloves", name: "Empress International Gloves", type: "High-End", core: "yellow", attr: ["+1 Skill Tier", "10% Skill Dmg", "12% Skill Haste"], talent: "Brand Set Core" },
+          { slot: "Holster", name: "Waveform Holster", type: "Exotic", core: "yellow", attr: ["+1 Skill Tier", "10% Skill Dmg", "12% Skill Haste"], talent: "Alternating Current (Cycles +30% skill damage between skills)" },
+          { slot: "Kneepads", name: "Wyvern Wear Kneepads", type: "High-End", core: "yellow", attr: ["+1 Skill Tier", "10% Skill Dmg", "12% Skill Haste"], talent: "1pc Brand: +10% Skill Damage" }
+        ],
+        skills: ["Striker Drone (Tier 6)", "Assault Turret (Tier 6)"],
+        description: "The gold standard build for clearing Legendary Roosevelt Island and Capitol Building solo while staying safely behind cover. Striker Drone and Assault Turret target elite enemies with combined 4.8M continuous DPS without ever consuming ammunition.",
+        strengths: ["Safest playstyle in the game for Legendary Strongholds", "High uptime with almost zero cooldowns", "Draws all enemy aggro away from the agent"],
+        weaknesses: ["Disrupted by Hunter EMP or Black Tusk Jammer towers", "Slow combat pace compared to aggressive red DPS"],
+        dpsNumber: 4800000,
+        sustainedNumber: 4200000,
+        code: "SHD-AFK-EMPR-6YEL-TURRET"
+      },
+      {
+        id: 'hotshot_headhunter_sniper',
+        title: "Hotshot Sniper Headhunter One-Shot",
+        category: 'hybrid',
+        role: "Extreme Long-Range Single Hit Nuker",
+        difficulty: "High (Requires Headshot Aim)",
+        burstDPS: "31.5M Single Headshot Kill",
+        sustainedDPS: "1 Hit / 1 Kill Cadence",
+        effectiveArmor: "726k Armor",
+        shieldHP: "N/A",
+        cores: { red: 6, blue: 0, yellow: 0 },
+        tag: "ONE-SHOT HEROIC SPEED",
+        weapons: {
+          primary: "Model 700 / The White Death (Sniper w/ Determined / Flatline)",
+          secondary: "Mantis or Nemesis Exotic Marksman Rifle",
+          sidearm: "Orbit (Named Magnum)"
+        },
+        gearPieces: [
+          { slot: "Mask", name: "Hotshot Mask", type: "Gear Set", core: "red", attr: ["15% Wpn Dmg", "10% HSD"], talent: "Gear Set Core" },
+          { slot: "Chest", name: "Chainkiller (Walker, Harris & Co.)", type: "Named High-End", core: "red", attr: ["15% Wpn Dmg", "10% HSD", "12% CHD"], talent: "Perfect Headhunter (+1250% damage bonus on headshot kill cap)" },
+          { slot: "Backpack", name: "The Gift or Airaldi Backpack", type: "Named High-End", core: "red", attr: ["15% Wpn Dmg", "10% HSD", "12% CHD"], talent: "Perfect Vigilance (+25% Total Weapon Damage)" },
+          { slot: "Gloves", name: "Hotshot Gloves", type: "Gear Set", core: "red", attr: ["15% Wpn Dmg", "10% HSD"], talent: "Gear Set Core" },
+          { slot: "Holster", name: "Hotshot Holster", type: "Gear Set", core: "red", attr: ["15% Wpn Dmg", "10% HSD"], talent: "Gear Set Core" },
+          { slot: "Kneepads", name: "Hotshot Kneepads", type: "Gear Set", core: "red", attr: ["15% Wpn Dmg", "10% HSD"], talent: "Gear Set Core (+30% MM Dmg, +30% HSD, Auto-Reload on 3rd Headshot)" }
+        ],
+        skills: ["Decoy", "Reviver Hive / Remote Pulse"],
+        description: "Equips the 'Determined' weapon talent alongside Perfect Headhunter. After your first red-bar headshot kill, EVERY shot (even hitting an enemy's toe or body) is guaranteed to count as a critical headshot kill for 25M-31M damage.",
+        strengths: ["Can single-shot delete Named bosses and Heroic Heavy elites", "Never reloads due to Hotshot 4pc bonus", "Clears entire control points in under 60 seconds"],
+        weaknesses: ["Lost momentum if a shot misses or hits an impenetrable robot dog", "Zero survivability if rushed"],
+        dpsNumber: 31500000,
+        sustainedNumber: 12000000,
+        code: "SHD-SNIP-CHAIN-31M-ONESHOT"
+      },
+      {
+        id: 'hunters_fury_cqc',
+        title: "Hunter's Fury Close Quarters Finisher",
+        category: 'dps',
+        role: "Aggressive Close-Range SMG & Shotgun",
+        difficulty: "Moderate",
+        burstDPS: "11.6M Burst DPS",
+        sustainedDPS: "7.1M DPS",
+        effectiveArmor: "1.1M Armor (20% Armor on Kill)",
+        shieldHP: "3.2M Striker Shield",
+        cores: { red: 4, blue: 2, yellow: 0 },
+        tag: "DARK ZONE / HEROIC BLITZ",
+        weapons: {
+          primary: "Dark Winter (Named Vector .45 ACP w/ Perfect Killer)",
+          secondary: "Scorpio (Exotic Shotgun) or ACS-12",
+          sidearm: "Kard Custom"
+        },
+        gearPieces: [
+          { slot: "Mask", name: "Hunter's Fury Mask", type: "Gear Set", core: "red", attr: ["15% Wpn Dmg", "12% CHD"], talent: "Gear Set Core" },
+          { slot: "Chest", name: "Sokolov Concern Chestplate", type: "High-End", core: "red", attr: ["15% Wpn Dmg", "6% CHC", "12% CHD"], talent: "Obliterate (+25% Total Weapon Damage on Crits)" },
+          { slot: "Backpack", name: "Memento Backpack", type: "Exotic", core: "hybrid", attr: ["15% Wpn Dmg", "170k Armor", "+1 Skill Tier"], talent: "Kill Confirmed (Bonus Armor + 30% Amp Dmg + Health on Kill)" },
+          { slot: "Gloves", name: "Hunter's Fury Gloves", type: "Gear Set", core: "red", attr: ["15% Wpn Dmg", "12% CHD"], talent: "Gear Set Core" },
+          { slot: "Holster", name: "Hunter's Fury Holster", type: "Gear Set", core: "blue", attr: ["170k Armor", "12% CHD"], talent: "Gear Set Core" },
+          { slot: "Kneepads", name: "Hunter's Fury Kneepads", type: "Gear Set", core: "red", attr: ["15% Wpn Dmg", "12% CHD"], talent: "Disorient nearby enemies within 15m on kill" }
+        ],
+        skills: ["Crusader Shield", "Striker Drone / Banshee Pulse"],
+        description: "Built for fast-paced, high-adrenaline close quarters combat. Killing targets disorients all surrounding enemies within 15 meters, while Hunter's Fury restores 20% armor and 100% health instantly on kill.",
+        strengths: ["Massive 1200 RPM burst from the Vector SMG", "Inherent crowd control through automatic AOE Disorient", "Excellent sustain with armor-on-kill"],
+        weaknesses: ["Ineffective at ranges beyond 15 meters", "Requires continuous kill tempo to maintain buffs"],
+        dpsNumber: 11600000,
+        sustainedNumber: 7100000,
+        code: "SHD-HF-VECT-MEMENTO-CQC"
+      },
+      {
+        id: 'future_initiative_healer',
+        title: "Future Initiative Team Buffer & Healer",
+        category: 'hybrid',
+        role: "Raid Support / +25% Team Amplify Damage",
+        difficulty: "Low",
+        burstDPS: "+25% AMPLIFY TO ALL 8 PLAYERS",
+        sustainedDPS: "450k/sec Healing Output",
+        effectiveArmor: "726k Armor",
+        shieldHP: "N/A",
+        cores: { red: 0, blue: 0, yellow: 6 },
+        tag: "RAID / INCURSION MANDATORY",
+        weapons: {
+          primary: "Scorpio (To apply +20% damage debuffs to bosses)",
+          secondary: "Capacitor or Left Hand (Named Shotgun w/ Perfect Sledgehammer)",
+          sidearm: "TDI 'Kard' Custom"
+        },
+        gearPieces: [
+          { slot: "Mask", name: "Future Initiative Mask", type: "Gear Set", core: "yellow", attr: ["+1 Skill Tier", "20% Repair Skills"], talent: "Gear Set Core" },
+          { slot: "Chest", name: "Future Initiative Chestpiece", type: "Gear Set", core: "yellow", attr: ["+1 Skill Tier", "20% Repair Skills"], talent: "Tactical Superiority (Increases team ground bonus from 15% to 25% Total Wpn Dmg)" },
+          { slot: "Backpack", name: "The Setup (Uzina) or Alps Backpack", type: "Named High-End", core: "yellow", attr: ["+1 Skill Tier", "20% Repair Skills", "Skill Haste"], talent: "Perfectly Opportunistic (+15% Amplified Damage to targets hit by shotgun)" },
+          { slot: "Gloves", name: "Future Initiative Gloves", type: "Gear Set", core: "yellow", attr: ["+1 Skill Tier", "20% Repair Skills"], talent: "Gear Set Core" },
+          { slot: "Holster", name: "Future Initiative Holster", type: "Gear Set", core: "yellow", attr: ["+1 Skill Tier", "20% Repair Skills"], talent: "Gear Set Core" },
+          { slot: "Kneepads", name: "BTSU Datagloves or Alps Kneepads", type: "Exotic", core: "yellow", attr: ["+1 Skill Tier", "20% Repair Skills"], talent: "Transference Matrix (Overcharge entire raid team by detonating Hive)" }
+        ],
+        skills: ["Restorer Hive (Tier 6)", "Reinforcer Chem Launcher"],
+        description: "The undisputed pillar of 8-player Raids and the Paradise Lost Incursion. While teammates remain at full armor, they deal +25% amplified weapon & skill damage. BTSU gloves grant the entire squad instant Skill Overcharge.",
+        strengths: ["Provides the single largest net damage increase for the team in Division 2", "Incredible burst healing volume", "Resets team revive hives on command via BTSU"],
+        weaknesses: ["Virtually zero solo killing power", "Team buff drops if healer gets hit and loses full armor"],
+        dpsNumber: 1500000,
+        sustainedNumber: 1200000,
+        code: "SHD-FI-HEAL-BTSU-25AMP"
+      }
+    ];
+
+    /* =====================================================================
+       2. SVG GEAR SCHEMATIC GENERATOR
+       Generates tactical HUD graphics for each build card showing
+       weapons and 6 armor slots with color-coded Core Attributes.
+       ===================================================================== */
+    function renderGearSchematicSVG(build) {
+      const { red, blue, yellow } = build.cores;
+      
+      // Determine core color dots
+      const coreDots = [];
+      for(let i=0; i<red; i++) coreDots.push('#ef4444');
+      for(let i=0; i<blue; i++) coreDots.push('#3b82f6');
+      for(let i=0; i<yellow; i++) coreDots.push('#eab308');
+
+      return `
+        <svg viewBox="0 0 460 140" class="w-full h-auto drop-shadow" style="background: #090d14; border: 1px solid #1c2436; border-radius: 6px;">
+          <!-- Grid Matrix Background -->
+          <defs>
+            <pattern id="grid-${build.id}" width="16" height="16" patternUnits="userSpaceOnUse">
+              <path d="M 16 0 L 0 0 0 16" fill="none" stroke="#ff5500" stroke-width="0.3" stroke-opacity="0.15"/>
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#grid-${build.id})" />
+
+          <!-- Weapon Primary Slot -->
+          <g transform="translate(14, 16)">
+            <rect width="190" height="48" rx="4" fill="#121824" stroke="#ff5500" stroke-width="1" stroke-opacity="0.6"/>
+            <text x="8" y="16" fill="#ff7700" font-family="Share Tech Mono" font-size="9" letter-spacing="1">PRIMARY WEAPON</text>
+            <text x="8" y="32" fill="#ffffff" font-family="Orbitron" font-size="10.5" font-weight="700">
+              ${truncateText(build.weapons.primary, 22)}
+            </text>
+            <circle cx="176" cy="24" r="5" fill="#ff5500" opacity="0.8" />
+          </g>
+
+          <!-- Weapon Secondary Slot -->
+          <g transform="translate(14, 76)">
+            <rect width="190" height="48" rx="4" fill="#121824" stroke="#25324d" stroke-width="1"/>
+            <text x="8" y="16" fill="#94a3b8" font-family="Share Tech Mono" font-size="9" letter-spacing="1">SECONDARY WEAPON</text>
+            <text x="8" y="32" fill="#cbd5e1" font-family="Orbitron" font-size="10" font-weight="600">
+              ${truncateText(build.weapons.secondary, 23)}
+            </text>
+          </g>
+
+          <!-- 6 Gear Slot Tactical Layout (Mask, Chest, Holster, Backpack, Gloves, Knees) -->
+          <g transform="translate(220, 16)">
+            <!-- Top Row: Mask, Chest, Backpack -->
+            <!-- Slot 1: Mask -->
+            <g transform="translate(0, 0)">
+              <rect width="68" height="48" rx="3" fill="#121824" stroke="${build.gearPieces[0].core === 'red' ? '#ef4444' : build.gearPieces[0].core === 'blue' ? '#3b82f6' : '#eab308'}" stroke-width="1.2"/>
+              <text x="5" y="14" fill="#94a3b8" font-family="Share Tech Mono" font-size="8">MASK</text>
+              <text x="5" y="28" fill="#ffffff" font-family="Share Tech Mono" font-size="8.5" font-weight="bold">${truncateText(build.gearPieces[0].name.replace('Gear Set',''), 9)}</text>
+              <circle cx="58" cy="12" r="3" fill="${build.gearPieces[0].core === 'red' ? '#ef4444' : build.gearPieces[0].core === 'blue' ? '#3b82f6' : '#eab308'}"/>
+            </g>
+
+            <!-- Slot 2: Chest -->
+            <g transform="translate(76, 0)">
+              <rect width="68" height="48" rx="3" fill="#121824" stroke="${build.gearPieces[1].core === 'red' ? '#ef4444' : build.gearPieces[1].core === 'blue' ? '#3b82f6' : '#eab308'}" stroke-width="1.2"/>
+              <text x="5" y="14" fill="#94a3b8" font-family="Share Tech Mono" font-size="8">CHEST</text>
+              <text x="5" y="28" fill="#ffffff" font-family="Share Tech Mono" font-size="8.5" font-weight="bold">${truncateText(build.gearPieces[1].name.replace('Gear Set',''), 9)}</text>
+              <circle cx="58" cy="12" r="3" fill="${build.gearPieces[1].core === 'red' ? '#ef4444' : build.gearPieces[1].core === 'blue' ? '#3b82f6' : '#eab308'}"/>
+            </g>
+
+            <!-- Slot 3: Backpack -->
+            <g transform="translate(152, 0)">
+              <rect width="68" height="48" rx="3" fill="#121824" stroke="${build.gearPieces[2].core === 'red' ? '#ef4444' : build.gearPieces[2].core === 'blue' ? '#3b82f6' : '#eab308'}" stroke-width="1.2"/>
+              <text x="5" y="14" fill="#94a3b8" font-family="Share Tech Mono" font-size="8">PACK</text>
+              <text x="5" y="28" fill="#ffffff" font-family="Share Tech Mono" font-size="8.5" font-weight="bold">${truncateText(build.gearPieces[2].name.replace('Gear Set',''), 9)}</text>
+              <circle cx="58" cy="12" r="3" fill="${build.gearPieces[2].core === 'red' ? '#ef4444' : build.gearPieces[2].core === 'blue' ? '#3b82f6' : '#eab308'}"/>
+            </g>
+
+            <!-- Bottom Row: Gloves, Holster, Kneepads -->
+            <!-- Slot 4: Gloves -->
+            <g transform="translate(0, 60)">
+              <rect width="68" height="48" rx="3" fill="#121824" stroke="${build.gearPieces[3].core === 'red' ? '#ef4444' : build.gearPieces[3].core === 'blue' ? '#3b82f6' : '#eab308'}" stroke-width="1.2"/>
+              <text x="5" y="14" fill="#94a3b8" font-family="Share Tech Mono" font-size="8">GLOVES</text>
+              <text x="5" y="28" fill="#ffffff" font-family="Share Tech Mono" font-size="8.5" font-weight="bold">${truncateText(build.gearPieces[3].name.replace('Gear Set',''), 9)}</text>
+              <circle cx="58" cy="12" r="3" fill="${build.gearPieces[3].core === 'red' ? '#ef4444' : build.gearPieces[3].core === 'blue' ? '#3b82f6' : '#eab308'}"/>
+            </g>
+
+            <!-- Slot 5: Holster -->
+            <g transform="translate(76, 60)">
+              <rect width="68" height="48" rx="3" fill="#121824" stroke="${build.gearPieces[4].core === 'red' ? '#ef4444' : build.gearPieces[4].core === 'blue' ? '#3b82f6' : '#eab308'}" stroke-width="1.2"/>
+              <text x="5" y="14" fill="#94a3b8" font-family="Share Tech Mono" font-size="8">HOLSTER</text>
+              <text x="5" y="28" fill="#ffffff" font-family="Share Tech Mono" font-size="8.5" font-weight="bold">${truncateText(build.gearPieces[4].name.replace('Gear Set',''), 9)}</text>
+              <circle cx="58" cy="12" r="3" fill="${build.gearPieces[4].core === 'red' ? '#ef4444' : build.gearPieces[4].core === 'blue' ? '#3b82f6' : '#eab308'}"/>
+            </g>
+
+            <!-- Slot 6: Kneepads -->
+            <g transform="translate(152, 60)">
+              <rect width="68" height="48" rx="3" fill="#121824" stroke="${build.gearPieces[5].core === 'red' ? '#ef4444' : build.gearPieces[5].core === 'blue' ? '#3b82f6' : '#eab308'}" stroke-width="1.2"/>
+              <text x="5" y="14" fill="#94a3b8" font-family="Share Tech Mono" font-size="8">KNEES</text>
+              <text x="5" y="28" fill="#ffffff" font-family="Share Tech Mono" font-size="8.5" font-weight="bold">${truncateText(build.gearPieces[5].name.replace('Gear Set',''), 9)}</text>
+              <circle cx="58" cy="12" r="3" fill="${build.gearPieces[5].core === 'red' ? '#ef4444' : build.gearPieces[5].core === 'blue' ? '#3b82f6' : '#eab308'}"/>
+            </g>
+          </g>
+        </svg>
+      `;
+    }
+
+    function truncateText(text, length) {
+      if (!text) return '';
+      return text.length > length ? text.substring(0, length) + '..' : text;
+    }
+
+    /* =====================================================================
+       3. FAVORITES AND UI STATE MANAGEMENT
+       ===================================================================== */
+    let favoritesList = JSON.parse(localStorage.getItem('shd_favorites') || '["striker_red_core", "hotshot_headhunter_sniper"]');
+    let currentCategory = 'all';
+    let filterOnlyFavorites = false;
+    let searchQuery = '';
+
+    function toggleFavorite(id, event) {
+      if (event) event.stopPropagation();
+      SHDAudio.playChirp('click');
+      if (favoritesList.includes(id)) {
+        favoritesList = favoritesList.filter(item => item !== id);
+        showToast("Build removed from favorites");
+      } else {
+        favoritesList.push(id);
+        showToast("Build added to bookmarks");
+      }
+      localStorage.setItem('shd_favorites', JSON.stringify(favoritesList));
+      updateFavoritesUI();
+      renderBuilds();
+    }
+
+    function updateFavoritesUI() {
+      const btnText = document.getElementById('fav-btn-text');
+      if (btnText) {
+        btnText.textContent = `FAVORITES (${favoritesList.length})`;
+      }
+      const favBtn = document.getElementById('fav-filter-btn');
+      if (filterOnlyFavorites) {
+        favBtn.classList.add('border-amber-400', 'bg-amber-400/20');
+      } else {
+        favBtn.classList.remove('border-amber-400', 'bg-amber-400/20');
+      }
+    }
+
+    function toggleFavoriteFilter() {
+      SHDAudio.playChirp('tab');
+      filterOnlyFavorites = !filterOnlyFavorites;
+      updateFavoritesUI();
+      renderBuilds();
+    }
+
+    function setCategoryFilter(category, buttonElement) {
+      SHDAudio.playChirp('tab');
+      currentCategory = category;
+      document.querySelectorAll('.filter-tab').forEach(tab => {
+        tab.classList.remove('bg-shd-orange', 'text-black', 'border-shd-orange', 'font-bold');
+        tab.classList.add('bg-[#111622]', 'text-slate-300', 'border-shd-cardBorder');
+      });
+      if (buttonElement) {
+        buttonElement.classList.add('bg-shd-orange', 'text-black', 'border-shd-orange', 'font-bold');
+        buttonElement.classList.remove('bg-[#111622]', 'text-slate-300', 'border-shd-cardBorder');
+      }
+      renderBuilds();
+    }
+
+    function filterBuilds() {
+      searchQuery = document.getElementById('search-input').value.toLowerCase().trim();
+      renderBuilds();
+    }
+
+    /* =====================================================================
+       4. BUILD CARDS RENDERING
+       ===================================================================== */
+    function renderBuilds() {
+      const container = document.getElementById('builds-grid');
+      const filtered = DIVISION_BUILDS.filter(build => {
+        // Category match
+        if (currentCategory !== 'all' && build.category !== currentCategory) return false;
+        // Favorites filter
+        if (filterOnlyFavorites && !favoritesList.includes(build.id)) return false;
+        // Search query match
+        if (searchQuery) {
+          const matchTitle = build.title.toLowerCase().includes(searchQuery);
+          const matchWeapon = (build.weapons.primary + ' ' + build.weapons.secondary).toLowerCase().includes(searchQuery);
+          const matchGear = build.gearPieces.some(g => g.name.toLowerCase().includes(searchQuery) || g.talent.toLowerCase().includes(searchQuery));
+          const matchRole = build.role.toLowerCase().includes(searchQuery);
+          if (!matchTitle && !matchWeapon && !matchGear && !matchRole) return false;
+        }
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="col-span-full py-12 text-center border border-dashed border-shd-cardBorder rounded-xl font-mono text-slate-400">
+            <svg class="w-12 h-12 mx-auto text-shd-orange/40 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            <p class="text-white font-orbitron">NO SHD LOADOUTS LOCATED</p>
+            <p class="text-xs text-slate-500 mt-1">Try resetting search filters or category parameters.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = filtered.map(build => {
+        const isFav = favoritesList.includes(build.id);
+        const { red, blue, yellow } = build.cores;
+
+        return `
+          <div class="bg-[#111622] border border-shd-cardBorder hover:border-shd-orange/70 transition-all duration-200 rounded-xl p-5 flex flex-col justify-between hud-box relative group">
+            
+            <!-- Card Top Header -->
+            <div>
+              <div class="flex items-start justify-between gap-3 mb-2">
+                <div class="flex flex-wrap items-center gap-1.5 font-mono text-[10px]">
+                  <span class="px-2 py-0.5 rounded bg-shd-orange/20 text-shd-orange border border-shd-orange/40 font-bold">
+                    ${build.tag}
+                  </span>
+                  <span class="text-slate-400 uppercase">• ${build.role}</span>
+                </div>
+                
+                <!-- Favorite Bookmark Button -->
+                <button onclick="toggleFavorite('${build.id}', event)" class="text-slate-400 hover:text-amber-400 transition p-1">
+                  <svg class="w-5 h-5 ${isFav ? 'text-amber-400 fill-current' : 'fill-none stroke-current'}" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+                  </svg>
+                </button>
+              </div>
+
+              <!-- Build Title -->
+              <h3 class="text-lg sm:text-xl font-orbitron font-bold text-white group-hover:text-shd-orange transition">
+                ${build.title}
+              </h3>
+
+              <!-- Cores Display -->
+              <div class="flex items-center space-x-3 my-2.5 font-mono text-xs">
+                <span class="text-slate-400">CORES:</span>
+                <div class="flex items-center space-x-1">
+                  <span class="w-2.5 h-2.5 rounded-full bg-shd-redCore inline-block"></span>
+                  <span class="text-shd-redCore font-bold">${red}</span>
+                </div>
+                <div class="flex items-center space-x-1">
+                  <span class="w-2.5 h-2.5 rounded-full bg-shd-blueCore inline-block"></span>
+                  <span class="text-shd-blueCore font-bold">${blue}</span>
+                </div>
+                <div class="flex items-center space-x-1">
+                  <span class="w-2.5 h-2.5 rounded-full bg-shd-yellowCore inline-block"></span>
+                  <span class="text-shd-yellowCore font-bold">${yellow}</span>
+                </div>
+                <span class="text-slate-500">|</span>
+                <span class="text-slate-400 text-[11px]">DIFFICULTY: <span class="text-slate-200">${build.difficulty}</span></span>
+              </div>
+
+              <!-- SVG Gear Schematic Render -->
+              <div class="my-3">
+                ${renderGearSchematicSVG(build)}
+              </div>
+
+              <!-- Key Damage / Tank Telemetry Banner -->
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 bg-[#090d14] p-3 rounded border border-shd-cardBorder font-mono text-xs">
+                <div>
+                  <div class="text-[10px] text-slate-500">BURST DPS / DMG</div>
+                  <div class="font-bold text-shd-orange text-sm truncate">${build.burstDPS}</div>
+                </div>
+                <div>
+                  <div class="text-[10px] text-slate-500">SUSTAINED COMBAT</div>
+                  <div class="font-bold text-amber-400 text-sm truncate">${build.sustainedDPS}</div>
+                </div>
+                <div class="col-span-2 sm:col-span-1">
+                  <div class="text-[10px] text-slate-500">SURVIVABILITY</div>
+                  <div class="font-bold text-blue-400 text-sm truncate">${build.effectiveArmor}</div>
+                </div>
+              </div>
+
+              <!-- Quick Description -->
+              <p class="text-xs text-slate-300 mt-3 line-clamp-2 leading-relaxed">
+                ${build.description}
+              </p>
+            </div>
+
+            <!-- Card Action Footer -->
+            <div class="mt-4 pt-3 border-t border-shd-cardBorder/60 flex items-center justify-between font-mono text-xs">
+              <div class="text-slate-400 text-[11px] truncate max-w-[180px]">
+                SKILLS: <span class="text-white">${build.skills.join(' + ')}</span>
+              </div>
+              <button onclick="openInspectorModal('${build.id}')" class="px-3 py-1.5 rounded bg-shd-orange/20 border border-shd-orange hover:bg-shd-orange hover:text-black font-bold text-shd-orange transition flex items-center space-x-1">
+                <span>INSPECT LOADOUT</span>
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
+                </svg>
+              </button>
+            </div>
+
+          </div>
+        `;
+      }).join('');
+    }
+
+    /* =====================================================================
+       5. BUILD COMPARISON TABLE
+       ===================================================================== */
+    function renderComparisonTable() {
+      const tbody = document.getElementById('comparison-table-body');
+      tbody.innerHTML = DIVISION_BUILDS.map(b => {
+        return `
+          <tr class="hover:bg-[#141b26] transition">
+            <td class="p-3 font-bold text-white whitespace-nowrap">
+              ${b.title}
+            </td>
+            <td class="p-3 text-slate-300 whitespace-nowrap">
+              ${b.role}
+            </td>
+            <td class="p-3 whitespace-nowrap font-bold">
+              <span class="text-red-400">${b.cores.red}R</span> /
+              <span class="text-blue-400">${b.cores.blue}B</span> /
+              <span class="text-yellow-400">${b.cores.yellow}Y</span>
+            </td>
+            <td class="p-3 text-slate-300 whitespace-nowrap">
+              ${truncateText(b.weapons.primary, 24)}
+            </td>
+            <td class="p-3 text-right font-bold text-shd-orange whitespace-nowrap">
+              ${b.burstDPS}
+            </td>
+            <td class="p-3 text-right font-bold text-amber-400 whitespace-nowrap">
+              ${b.sustainedDPS}
+            </td>
+            <td class="p-3 text-blue-300 whitespace-nowrap">
+              ${b.effectiveArmor}
+            </td>
+            <td class="p-3 text-center whitespace-nowrap">
+              <button onclick="openInspectorModal('${b.id}')" class="text-shd-orange hover:underline font-bold">
+                VIEW
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    /* =====================================================================
+       6. INSPECTOR MODAL POPULATION
+       ===================================================================== */
+    let activeModalBuild = null;
+
+    function openInspectorModal(buildId) {
+      SHDAudio.playChirp('alert');
+      const build = DIVISION_BUILDS.find(b => b.id === buildId);
+      if (!build) return;
+      activeModalBuild = build;
+
+      document.getElementById('modal-build-title').textContent = build.title;
+      document.getElementById('modal-build-subtitle').textContent = `CLASSIFICATION: ${build.tag} // ${build.role}`;
+      document.getElementById('modal-build-hash').textContent = build.code;
+
+      const modalBody = document.getElementById('modal-body-content');
+      modalBody.innerHTML = `
+        <!-- Top Metrics Breakdown -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-[#0a0d13] p-4 rounded-lg border border-shd-cardBorder font-mono">
+          <div>
+            <div class="text-[11px] text-slate-400">BURST COMBAT DPS</div>
+            <div class="text-xl font-orbitron font-bold text-shd-orange">${build.burstDPS}</div>
+          </div>
+          <div>
+            <div class="text-[11px] text-slate-400">SUSTAINED CYCLE DPS</div>
+            <div class="text-xl font-orbitron font-bold text-amber-400">${build.sustainedDPS}</div>
+          </div>
+          <div>
+            <div class="text-[11px] text-slate-400">ARMOR / SHIELD VALUE</div>
+            <div class="text-xl font-orbitron font-bold text-blue-400">${build.effectiveArmor}</div>
+          </div>
+          <div>
+            <div class="text-[11px] text-slate-400">SHIELD MAX HP</div>
+            <div class="text-xl font-orbitron font-bold text-slate-200">${build.shieldHP}</div>
+          </div>
+        </div>
+
+        <!-- Weapons Arsenal Breakdown -->
+        <div>
+          <h4 class="font-orbitron font-bold text-sm text-white mb-2 flex items-center space-x-1.5">
+            <span class="text-shd-orange">▶</span>
+            <span>TACTICAL WEAPON LOADOUT</span>
+          </h4>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 font-mono text-xs">
+            <div class="bg-[#151c28] p-3 rounded border border-shd-orange/40">
+              <span class="text-[10px] text-shd-orange uppercase">Primary Weapon</span>
+              <div class="text-sm font-bold text-white mt-1">${build.weapons.primary}</div>
+            </div>
+            <div class="bg-[#151c28] p-3 rounded border border-shd-cardBorder">
+              <span class="text-[10px] text-slate-400 uppercase">Secondary Weapon</span>
+              <div class="text-sm font-bold text-white mt-1">${build.weapons.secondary}</div>
+            </div>
+            <div class="bg-[#151c28] p-3 rounded border border-shd-cardBorder">
+              <span class="text-[10px] text-slate-400 uppercase">Sidearm Pistol</span>
+              <div class="text-sm font-bold text-white mt-1">${build.weapons.sidearm}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 6 Armor Slots In-Depth -->
+        <div>
+          <h4 class="font-orbitron font-bold text-sm text-white mb-2 flex items-center space-x-1.5">
+            <span class="text-shd-orange">▶</span>
+            <span>GEAR SLOTS & RECALIBRATION ROLLS</span>
+          </h4>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 font-mono text-xs">
+            ${build.gearPieces.map(piece => {
+              const coreColor = piece.core === 'red' ? 'text-red-400 border-red-500/40' : piece.core === 'blue' ? 'text-blue-400 border-blue-500/40' : piece.core === 'yellow' ? 'text-yellow-400 border-yellow-500/40' : 'text-purple-400 border-purple-500/40';
+              return `
+                <div class="bg-[#0e131d] p-3 rounded border ${coreColor} flex flex-col justify-between">
+                  <div class="flex items-center justify-between">
+                    <span class="font-bold text-white text-sm">${piece.slot}: ${piece.name}</span>
+                    <span class="text-[10px] uppercase px-1.5 py-0.5 rounded bg-black/40 ${coreColor}">${piece.core} core</span>
+                  </div>
+                  <div class="text-[11px] text-slate-300 mt-2">
+                    <span class="text-slate-500">ATTRIBUTES:</span> ${piece.attr.join(' • ')}
+                  </div>
+                  <div class="text-[11px] text-amber-400/90 mt-1">
+                    <span class="text-slate-500">TALENT:</span> ${piece.talent}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+
+        <!-- Tactical Strengths & Weaknesses -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 font-mono text-xs">
+          <div class="bg-emerald-950/20 border border-emerald-500/30 p-3 rounded">
+            <span class="text-emerald-400 font-bold uppercase flex items-center space-x-1 mb-1">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+              <span>KEY COMBAT ADVANTAGES</span>
+            </span>
+            <ul class="list-disc list-inside text-slate-300 space-y-1">
+              ${build.strengths.map(s => `<li>${s}</li>`).join('')}
+            </ul>
+          </div>
+
+          <div class="bg-red-950/20 border border-red-500/30 p-3 rounded">
+            <span class="text-red-400 font-bold uppercase flex items-center space-x-1 mb-1">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+              <span>TACTICAL VULNERABILITIES</span>
+            </span>
+            <ul class="list-disc list-inside text-slate-300 space-y-1">
+              ${build.weaknesses.map(w => `<li>${w}</li>`).join('')}
+            </ul>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('inspector-modal').classList.remove('hidden');
+    }
+
+    function closeInspectorModal() {
+      SHDAudio.playChirp('click');
+      document.getElementById('inspector-modal').classList.add('hidden');
+    }
+
+    function copyLoadoutCode() {
+      if (!activeModalBuild) return;
+      const code = activeModalBuild.code;
+      // Fallback copy
+      const tempInput = document.createElement('input');
+      tempInput.value = code;
+      document.body.appendChild(tempInput);
+      tempInput.select();
+      document.execCommand('copy');
+      document.body.removeChild(tempInput);
+
+      SHDAudio.playChirp('alert');
+      showToast(`Copied build string: ${code}`);
+    }
+
+    function showToast(message) {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = 'px-4 py-2.5 rounded bg-[#111622] border border-shd-orange text-white shadow-[0_0_15px_#ff550055] transition transform translate-y-2 opacity-0 duration-200 flex items-center space-x-2';
+      toast.innerHTML = `
+        <span class="w-2 h-2 rounded-full bg-shd-orange animate-ping"></span>
+        <span>${message}</span>
+      `;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+      }, 10);
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 250);
+      }, 2800);
+    }
+
+    /* =====================================================================
+       7. INTERACTIVE DIVISION 2 DPS FORMULA ENGINE
+       Standard formula components:
+       Base Damage * (1 + AWD) * (1 + CritMultiplier) * (1 + Headshot) * (1 + DTOOC) * (1 + DTA) * (Amp)
+       ===================================================================== */
+    function updateDPSCalc() {
+      SHDAudio.playChirp('calc');
+
+      const baseDmg = parseFloat(document.getElementById('calc-base-dmg').value) || 0;
+      const rpm = parseFloat(document.getElementById('calc-rpm').value) || 600;
+      const magSize = parseFloat(document.getElementById('calc-mag').value) || 50;
+
+      const chc = parseFloat(document.getElementById('calc-chc').value) || 0;
+      const chd = parseFloat(document.getElementById('calc-chd').value) || 0;
+      const hsd = parseFloat(document.getElementById('calc-hsd').value) || 0;
+
+      const dtooc = parseFloat(document.getElementById('calc-dtooc').value) || 0;
+      const dta = parseFloat(document.getElementById('calc-dta').value) || 0;
+      const stacks = parseFloat(document.getElementById('calc-stacks').value) || 0;
+      const redCores = parseFloat(document.getElementById('calc-red-cores').value) || 0;
+
+      // Update UI slider labels
+      document.getElementById('calc-chc-val').textContent = chc.toFixed(1) + '%';
+      document.getElementById('calc-chd-val').textContent = chd.toFixed(1) + '%';
+      document.getElementById('calc-hsd-val').textContent = hsd.toFixed(1) + '%';
+      document.getElementById('calc-dtooc-val').textContent = dtooc + '%';
+      document.getElementById('calc-dta-val').textContent = dta + '%';
+      document.getElementById('calc-stacks-val').textContent = stacks;
+      document.getElementById('calc-red-cores-val').textContent = redCores + ' Cores';
+
+      // Weapon Damage Multiplier from Red Cores (15% per core + 15% weapon native)
+      const allWeaponDmgMult = 1 + (redCores * 0.15) + 0.15;
+
+      // Multiplicative gear stack bonus
+      const stackType = document.getElementById('calc-stack-type').value;
+      let stackAmp = 1;
+      if (stackType === '0.0065') {
+        stackAmp = 1 + (stacks * 0.0065);
+      } else if (stackType === '0.0100') {
+        stackAmp = 1 + (stacks * 0.0100);
+      } else if (stackType === '0.0100_hb') {
+        stackAmp = 1 + (stacks * 0.0100);
+      }
+
+      // Talent Amplified Modifier
+      const talentAmpVal = document.getElementById('calc-talent-amp').value;
+      let talentAmp = 1.0;
+      if (talentAmpVal === '0.25') talentAmp = 1.25;
+      if (talentAmpVal === '0.25_gc') talentAmp = 1.30;
+      if (talentAmpVal === '0.20') talentAmp = 1.25;
+      if (talentAmpVal === '0.20_flat') talentAmp = 1.20;
+
+      // Multipliers
+      const dtoocMult = 1 + (dtooc / 100);
+      const dtaMult = 1 + (dta / 100);
+
+      // Base non-crit hit damage
+      const nonCritHit = baseDmg * allWeaponDmgMult * dtoocMult * dtaMult * stackAmp * talentAmp;
+      
+      // Crit hit damage
+      const critHit = nonCritHit * (1 + (chd / 100));
+
+      // Headshot damage (additive to CHD or standalone non-crit headshot)
+      const headshotHit = nonCritHit * (1 + (hsd / 100));
+      const headshotCritHit = nonCritHit * (1 + (chd / 100) + (hsd / 100));
+
+      // Average hit taking Critical Hit Chance into account
+      const effectiveHit = (critHit * (chc / 100)) + (nonCritHit * (1 - (chc / 100)));
+
+      // Rounds per second
+      const rps = rpm / 60;
+      const burstDPS = effectiveHit * rps;
+
+      // Magazine Dump & Sustained Calculation
+      const magFireTime = magSize / rps;
+      const reloadTime = 2.3; // standard Division 2 AR reload time average
+      const cycleTime = magFireTime + reloadTime;
+      const magTotalDmg = effectiveHit * magSize;
+      const sustainedDPS = magTotalDmg / cycleTime;
+
+      // Update Outputs
+      document.getElementById('output-burst-dps').textContent = Math.round(burstDPS).toLocaleString();
+      document.getElementById('output-sustained-dps').textContent = Math.round(sustainedDPS).toLocaleString() + ' DPS';
+      document.getElementById('output-body-hit').textContent = Math.round(nonCritHit).toLocaleString();
+      document.getElementById('output-crit-hit').textContent = Math.round(critHit).toLocaleString();
+      document.getElementById('output-head-hit').textContent = Math.round(headshotHit).toLocaleString();
+      document.getElementById('output-crit-head').textContent = Math.round(headshotCritHit).toLocaleString();
+      document.getElementById('output-mag-total').textContent = Math.round(magTotalDmg).toLocaleString() + ' DMG';
+      document.getElementById('output-mag-time').textContent = magFireTime.toFixed(2) + 's';
+      
+      // Crit probability bar
+      document.getElementById('bar-crit-ratio').style.width = chc + '%';
+      document.getElementById('bar-crit-label').textContent = chc.toFixed(1) + '%';
+
+      // Redraw Canvas Benchmark Chart
+      drawDPSBenchmark(burstDPS, sustainedDPS);
+    }
+
+    function loadWeaponPreset(preset) {
+      SHDAudio.playChirp('tab');
+      if (preset === 'st_elmo') {
+        document.getElementById('calc-base-dmg').value = 78500;
+        document.getElementById('calc-rpm').value = 850;
+        document.getElementById('calc-mag').value = 70;
+        document.getElementById('calc-chc').value = 58;
+        document.getElementById('calc-chd').value = 172;
+        document.getElementById('calc-dtooc').value = 10;
+        document.getElementById('calc-dta').value = 6;
+        document.getElementById('calc-stacks').value = 120;
+        document.getElementById('calc-stack-type').value = '0.0100';
+        document.getElementById('calc-red-cores').value = 6;
+        document.getElementById('calc-talent-amp').value = '0.25';
+      } else if (preset === 'ouroboros') {
+        document.getElementById('calc-base-dmg').value = 52000;
+        document.getElementById('calc-rpm').value = 1485;
+        document.getElementById('calc-mag').value = 50;
+        document.getElementById('calc-chc').value = 60;
+        document.getElementById('calc-chd').value = 160;
+        document.getElementById('calc-dtooc').value = 10;
+        document.getElementById('calc-dta').value = 0;
+        document.getElementById('calc-stacks').value = 150;
+        document.getElementById('calc-stack-type').value = '0.0065';
+        document.getElementById('calc-red-cores').value = 6;
+        document.getElementById('calc-talent-amp').value = '0.25_gc';
+      } else if (preset === 'white_death') {
+        document.getElementById('calc-base-dmg').value = 920000;
+        document.getElementById('calc-rpm').value = 55;
+        document.getElementById('calc-mag').value = 5;
+        document.getElementById('calc-chc').value = 15;
+        document.getElementById('calc-chd').value = 60;
+        document.getElementById('calc-hsd').value = 295;
+        document.getElementById('calc-dtooc').value = 10;
+        document.getElementById('calc-dta').value = 8;
+        document.getElementById('calc-stacks').value = 0;
+        document.getElementById('calc-stack-type').value = '0.0000';
+        document.getElementById('calc-red-cores').value = 6;
+        document.getElementById('calc-talent-amp').value = '0.25';
+      }
+      updateDPSCalc();
+    }
+
+    /* =====================================================================
+       8. CANVAS TELEMETRY BENCHMARK CHART
+       ===================================================================== */
+    function drawDPSBenchmark(calcBurst, calcSustained) {
+      const canvas = document.getElementById('dps-benchmark-canvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const w = canvas.parentElement.clientWidth;
+      const h = canvas.parentElement.clientHeight;
+      canvas.width = w;
+      canvas.height = h;
+
+      ctx.clearRect(0, 0, w, h);
+
+      // Data items to compare
+      const benchmarks = [
+        { label: 'Your Calc', val: calcBurst, color: '#ff5500' },
+        { label: 'Sustained', val: calcSustained, color: '#ffaa00' },
+        { label: 'Incursion Meta', val: 15800000, color: '#ef4444' },
+        { label: 'Heroic Avg', val: 7500000, color: '#3b82f6' }
+      ];
+
+      const maxVal = Math.max(...benchmarks.map(b => b.val), 18000000);
+      const barHeight = 16;
+      const gap = 8;
+      const startY = 12;
+
+      benchmarks.forEach((item, idx) => {
+        const y = startY + (idx * (barHeight + gap));
+        const barWidth = Math.max(15, (item.val / maxVal) * (w - 140));
+
+        // Label
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '10px "Share Tech Mono"';
+        ctx.fillText(item.label, 10, y + 12);
+
+        // Bar Background
+        ctx.fillStyle = '#141a24';
+        ctx.fillRect(100, y, w - 110, barHeight);
+
+        // Value Bar
+        ctx.fillStyle = item.color;
+        ctx.fillRect(100, y, barWidth, barHeight);
+
+        // Text Value
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 9px Orbitron';
+        const formatted = (item.val / 1000000).toFixed(1) + 'M';
+        ctx.fillText(formatted, 106 + barWidth, y + 12);
+      });
+    }
+
+    // Audio Toggle
+    function toggleAudio() {
+      const isEnabled = SHDAudio.toggle();
+      const label = document.getElementById('audio-label');
+      const icon = document.getElementById('audio-icon-on');
+      if (isEnabled) {
+        label.textContent = "AUDIO: ON";
+        icon.classList.remove('text-slate-500');
+        icon.classList.add('text-shd-orange');
+        SHDAudio.playChirp('alert');
+        showToast("ISAC Audio Synthesizer: Activated");
+      } else {
+        label.textContent = "AUDIO: MUTED";
+        icon.classList.remove('text-shd-orange');
+        icon.classList.add('text-slate-500');
+        showToast("ISAC Audio: Muted");
+      }
+    }
+
+    // ISAC Clock & Ticker Loop
+    function startClock() {
+      const clockEl = document.getElementById('isac-clock');
+      setInterval(() => {
+        const now = new Date();
+        clockEl.textContent = now.toTimeString().split(' ')[0] + ' UTC';
+      }, 1000);
+
+      const tickerEl = document.getElementById('tactical-ticker');
+      const tickerMessages = [
+        "Syncing DC & NY Agent tactical database... 8 loadouts verified.",
+        "ISAC Advisory: Classified gear calibrated for Incursion and Heroic directives.",
+        "Warning: Rogue Agent signatures detected near DZ South checkpoint.",
+        "DPS Engine calibrated to Patch 2026 gear scaling tables."
+      ];
+      let msgIdx = 0;
+      setInterval(() => {
+        msgIdx = (msgIdx + 1) % tickerMessages.length;
+        tickerEl.textContent = tickerMessages[msgIdx];
+      }, 7000);
+    }
+
+    // Window Resize listener to update Canvas
+    window.addEventListener('resize', () => {
+      updateDPSCalc();
+    });
+
+    // Initialize Application
+    window.onload = function () {
+      renderBuilds();
+      renderComparisonTable();
+      updateFavoritesUI();
+      updateDPSCalc();
+      startClock();
+    };
+  </script>
+</body>
+</html>
